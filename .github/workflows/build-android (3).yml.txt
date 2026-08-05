@@ -1,0 +1,165 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: |
+          sdkmanager \
+            "build-tools;35.0.0" \
+            "ndk;29.0.13113456" \
+            "platforms;android-29" \
+            "platforms;android-35"
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@v1
+        with:
+          haxe-version: 4.3.6
+
+      - name: Setup haxelib
+        run: |
+          haxelib setup ~/haxelib
+          # crea .haxelib local en el repo para que hxcpp git quede relativo al proyecto
+          haxelib newrepo
+
+      - name: Install haxelib (FunkinCrew fork)
+        run: haxelib --global git haxelib https://github.com/FunkinCrew/haxelib.git
+
+      - name: Install hmm (FunkinCrew fork)
+        run: haxelib --global git hmm https://github.com/FunkinCrew/hmm.git
+
+      - name: Cache haxelibs
+        id: cache-haxelibs
+        uses: actions/cache@v4
+        with:
+          path: .haxelib
+          key: haxelibs-v2-${{ hashFiles('hmm.json') }}
+
+      - name: Install project dependencies via hmm
+        if: steps.cache-haxelibs.outputs.cache-hit != 'true'
+        run: haxelib --global run hmm install
+
+      # Runs every build (cache hit or not) so it self-heals even if an older
+      # cached .haxelib/lime was populated before submodules were initialized.
+      - name: Init Lime's native submodules (SDL, etc.)
+        run: |
+          cd .haxelib/lime/git
+          git submodule update --init --recursive
+
+      # hxcpp desde git necesita compilar sus tools primero
+      - name: Build hxcpp tools
+        run: |
+          cd .haxelib/hxcpp/git/tools/hxcpp
+          haxe compile.hxml
+
+      - name: Cache Lime ndll
+        id: cache-lime-ndll
+        uses: actions/cache@v4
+        with:
+          path: .haxelib/lime
+          key: lime-ndll-v3-${{ hashFiles('hmm.json') }}-${{ runner.os }}
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git make autoconf automake libtool \
+            pkg-config cmake ninja-build mercurial \
+            g++ g++-multilib gcc-multilib \
+            libasound2-dev libpulse-dev libjack-dev libsndio-dev \
+            libsamplerate0-dev libmikmod-dev libflac-dev libopus-dev \
+            libopenal-dev libvorbis-dev libogg-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxinerama-dev libxxf86vm-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libxrender-dev \
+            libxcomposite-dev libxdamage-dev libxv-dev libxvmc-dev \
+            libxt-dev libsm-dev libice-dev libxmu-dev \
+            libdrm-dev libgbm-dev \
+            libgl1-mesa-dev libglu1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+            libvulkan-dev vulkan-tools \
+            libdbus-1-dev libdbus-1-dev:i386 libibus-1.0-dev libudev-dev libusb-1.0-0-dev \
+            libwayland-dev wayland-protocols libdecor-0-dev \
+            libpipewire-0.3-dev libspa-0.2-dev \
+            libfreetype-dev libfontconfig-dev libharfbuzz-dev libfribidi-dev \
+            libthai-dev libpango1.0-dev libcairo2-dev \
+            zlib1g-dev libbz2-dev libpng-dev libjpeg-dev libwebp-dev libtiff-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+            libssl-dev libcurl4-openssl-dev \
+            libglib2.0-dev libgdk-pixbuf2.0-dev \
+            libmbedtls-dev libunwind-dev \
+            libglew-dev libglfw3-dev \
+            libsndfile1-dev libopenal-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libc6-dev libstdc++-12-dev \
+            neko
+
+
+      - name: Cache hxcpp
+        uses: actions/cache@v4
+        with:
+          path: ~/.hxcpp
+          key: hxcpp-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            hxcpp-${{ runner.os }}-${{ github.ref_name }}-
+            hxcpp-${{ runner.os }}-
+
+      - name: Configure Lime for Android
+        run: |
+          export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.13113456
+          haxelib run lime config ANDROID_SDK $ANDROID_HOME
+          haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_ROOT
+          haxelib run lime config JAVA_HOME $JAVA_HOME
+          haxelib run lime config ANDROID_SETUP true
+
+      # This is the step that actually matters: FunkinCrew/lime ships a
+      # PREBUILT ndll/Android/liblime-*.so checked directly into its repo.
+      # "lime rebuild cpp" only rebuilds the desktop/host
+      # ndll and never touches this file. We must explicitly target "android"
+      # so Lime compiles a fresh .so from the actual pinned SDL source instead
+      # of shipping the stale prebuilt binary that caused the nativeSetupJNI
+      # crash (see commit history / troubleshooting notes for details).
+      - name: Rebuild Lime ndll for Android
+        if: steps.cache-lime-ndll.outputs.cache-hit != 'true'
+        run: |
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.13113456
+          haxelib run lime rebuild android -64 -release
+          haxelib run lime rebuild cpp
+
+      - name: Build APK
+        run: |
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.13113456
+          haxelib run lime build android -DEXCLUDE_ARMV7 -DGITHUB_BUILD -DNO_FEATURE_MOBILE_IAR
+
+      - name: Find APKs
+        run: find export/release/android -name "*.apk" 2>/dev/null || echo "No APKs found"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReFunked-android-arm64
+          path: export/release/android/bin/app/build/outputs/apk/
+          retention-days: 7
+          if-no-files-found: error
