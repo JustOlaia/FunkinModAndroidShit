@@ -331,7 +331,7 @@ class MainMenuState extends MusicBeatState
   {
     if (leftWatermarkText == null) return;
 
-    leftWatermarkText.text = '${Constants.VERSION} Preview #3';
+    leftWatermarkText.text = 'Playtest Version Ported by Aaronify';
 
     #if FEATURE_NEWGROUNDS
     if (NewgroundsClient.instance.isLoggedIn())
