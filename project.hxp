@@ -976,11 +976,11 @@ class Project extends HXProject
 
     // Should be true only on desktop builds.
     // Debug editors aren't built to work on web or mobile right now.
-    FEATURE_DEBUG_MENU.apply(this, !(isWeb() || isMobile()));
+    FEATURE_DEBUG_MENU.apply(this, false);
     FEATURE_ANIMATION_EDITOR.apply(this, !(isWeb() || isMobile()));
     FEATURE_CHART_EDITOR.apply(this, !isWeb());
     FEATURE_STAGE_EDITOR.apply(this, !(isWeb() || isMobile()));
-    FEATURE_CAMERA_EDITOR.apply(this, !(isWeb() || isMobile()));
+    FEATURE_CAMERA_EDITOR.apply(this, true);
     FEATURE_HAXEUI.apply(
       this, FEATURE_ANIMATION_EDITOR.isEnabled(
         this
