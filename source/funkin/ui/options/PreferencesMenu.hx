@@ -188,6 +188,15 @@ class PreferencesMenu extends Page<OptionsState.OptionsMenuPageName>
     {
       Preferences.autoFullscreen = value;
     }, Preferences.autoFullscreen);
+    #else
+    createPrefItemCheckbox('Fullscreen Mode', 'Toggles whether the game fills the whole screen edge-to-edge (including under notches/cutouts). Restarts the state to apply.',
+      function(value:Bool):Void
+      {
+        Preferences.fullscreenScaleMode = value;
+        funkin.ui.FullScreenScaleMode.enabled = value;
+        funkin.modding.PolymodHandler.forceReloadAssets();
+        FlxG.resetState();
+      }, Preferences.fullscreenScaleMode);
     #end
 
     // disable on mobile and web since it barely has any effect

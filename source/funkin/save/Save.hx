@@ -142,6 +142,7 @@ class Save implements ConsoleClass implements ISerializable
         vsyncMode: 'Off',
         strumlineBackgroundOpacity: 0,
         autoFullscreen: false,
+        fullscreenScaleMode: true,
         globalOffset: 0,
         audioVisualOffset: 0,
         unlockedFramerate: false,
@@ -1432,6 +1433,14 @@ typedef SaveDataOptions =
    * @default `true`
    */
   var autoFullscreen:Bool;
+
+  /**
+   * If enabled, the game scales to fill the screen edge-to-edge (including
+   * under notches/cutouts on mobile). Disabling this letterboxes the game
+   * instead. Mobile only.
+   * @default `true`
+   */
+  var fullscreenScaleMode:Bool;
 
   /**
    * Offset the user's inputs by this many ms.

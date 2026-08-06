@@ -185,7 +185,7 @@ class Main extends Sprite
     #end
 
     #if !html5
-    FlxG.scaleMode = new FullScreenScaleMode();
+    FlxG.scaleMode = new FullScreenScaleMode(#if mobile Preferences.fullscreenScaleMode #else true #end);
     #end
 
     #if mobile

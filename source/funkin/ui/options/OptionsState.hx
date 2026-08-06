@@ -18,6 +18,7 @@ import funkin.ui.mainmenu.MainMenuState;
 import funkin.ui.MusicBeatState;
 import funkin.graphics.shaders.HSVShader;
 import funkin.input.Controls;
+import funkin.ui.debug.charting.ChartEditorState;
 #if FEATURE_NEWGROUNDS
 import funkin.api.newgrounds.NewgroundsClient;
 #end
@@ -185,6 +186,7 @@ class OptionsMenu extends Page<OptionsMenuPageName>
     add(items = new TextMenuList());
 
     createItem('PREFERENCES', function() codex.switchPage(Preferences));
+    createItem('CHART EDITOR', function() FlxG.switchState(() -> new ChartEditorState()));
     #if FEATURE_TOUCH_CONTROLS
     if (ControlsHandler.hasExternalInputDevice)
     #end

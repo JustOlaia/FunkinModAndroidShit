@@ -68,6 +68,9 @@ import funkin.ui.debug.charting.commands.CutItemsCommand;
 import funkin.ui.debug.charting.commands.DeselectAllItemsBetweenTimeCommand;
 import funkin.ui.debug.charting.commands.DeselectAllItemsCommand;
 import funkin.ui.debug.charting.commands.DeselectItemsCommand;
+import funkin.ui.debug.charting.commands.DuplicateEventsCommand;
+import funkin.ui.debug.charting.commands.DuplicateItemsCommand;
+import funkin.ui.debug.charting.commands.DuplicateNotesCommand;
 import funkin.ui.debug.charting.commands.ExtendNoteLengthCommand;
 import funkin.ui.debug.charting.commands.FlipNotesCommand;
 import funkin.ui.debug.charting.commands.InvertSelectedItemsCommand;
@@ -127,6 +130,7 @@ import haxe.ui.events.MouseEvent;
 import haxe.ui.events.UIEvent;
 import haxe.ui.focus.FocusManager;
 import openfl.display.BitmapData;
+import openfl.Lib;
 
 using Lambda;
 
@@ -926,6 +930,26 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
    */
   var dragTargetCurrentColumn:Int = 0;
 
+  /**
+   * Whether the current note/event drag has been "armed" into duplicate mode by a long press.
+   * When true, releasing the drag creates copies at the drop position instead of moving the originals.
+   * Lets touch/Android users duplicate a selection by long-pressing it, then dragging, then releasing —
+   * since there's no keyboard for Ctrl+C / Ctrl+V.
+   */
+  var dragIsDuplicate:Bool = false;
+
+  /**
+   * Timestamp (in milliseconds) of when the current note/event drag started being held down.
+   * Used to detect a long press for `dragIsDuplicate`.
+   */
+  var dragPressStartTime:Float = 0;
+
+  /**
+   * How long (in milliseconds) a selected note/event must be held, without moving, before the drag
+   * arms itself into duplicate mode.
+   */
+  static final LONG_PRESS_DUPLICATE_MS:Float = 450;
+
   // Hold Note Dragging
 
   /**
@@ -1006,6 +1030,23 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
    * The events which are currently in the user's selection.
    */
   var currentEventSelection:Array<SongEventData> = [];
+
+  /**
+   * The last note/event/hold note that was clicked and released (without dragging),
+   * used to detect a "double tap" so touch/Android users (who have no DELETE key)
+   * can delete a selected note by tapping it a second time.
+   */
+  var lastTappedChartItem:Null<Dynamic> = null;
+
+  /**
+   * Timestamp (in milliseconds) of the last chart item tap, for double-tap detection.
+   */
+  var lastTappedChartItemTime:Float = 0;
+
+  /**
+   * Max delay in milliseconds between two taps on the same note/event for it to count as a double tap.
+   */
+  static final DOUBLE_TAP_MS:Float = 400;
 
   /**
    * The position where the user clicked to start a selection.
@@ -5401,18 +5442,48 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
           {
             if (highlightedNote != null && highlightedNote.noteData != null)
             {
-              // Click a note to select it.
-              performCommand(new SetItemSelectionCommand([highlightedNote.noteData], []));
+              // If this note was already selected AND we just tapped it again quickly,
+              // treat it as a "double tap" and delete it. This gives touch/Android users
+              // (who have no DELETE key) a way to remove notes without a keyboard.
+              if (isNoteSelected(highlightedNote.noteData) && isDoubleTap(highlightedNote.noteData))
+              {
+                performCommand(new RemoveNotesCommand([highlightedNote.noteData]));
+                clearLastTappedChartItem();
+              }
+              else
+              {
+                // Click a note to select it.
+                performCommand(new SetItemSelectionCommand([highlightedNote.noteData], []));
+                registerChartItemTap(highlightedNote.noteData);
+              }
             }
             else if (highlightedEvent != null && highlightedEvent.eventData != null)
             {
-              // Click an event to select it.
-              performCommand(new SetItemSelectionCommand([], [highlightedEvent.eventData]));
+              if (isEventSelected(highlightedEvent.eventData) && isDoubleTap(highlightedEvent.eventData))
+              {
+                performCommand(new RemoveEventsCommand([highlightedEvent.eventData]));
+                clearLastTappedChartItem();
+              }
+              else
+              {
+                // Click an event to select it.
+                performCommand(new SetItemSelectionCommand([], [highlightedEvent.eventData]));
+                registerChartItemTap(highlightedEvent.eventData);
+              }
             }
             else if (highlightedHoldNote != null && highlightedHoldNote.noteData != null)
             {
-              // Click a hold note to select it.
-              performCommand(new SetItemSelectionCommand([highlightedHoldNote.noteData], []));
+              if (isNoteSelected(highlightedHoldNote.noteData) && isDoubleTap(highlightedHoldNote.noteData))
+              {
+                performCommand(new RemoveNotesCommand([highlightedHoldNote.noteData]));
+                clearLastTappedChartItem();
+              }
+              else
+              {
+                // Click a hold note to select it.
+                performCommand(new SetItemSelectionCommand([highlightedHoldNote.noteData], []));
+                registerChartItemTap(highlightedHoldNote.noteData);
+              }
             }
             else
             {
@@ -5422,6 +5493,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new DeselectAllItemsCommand());
               }
+              clearLastTappedChartItem();
             }
           }
         }
@@ -5491,14 +5563,68 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
         {
           // There's no need to move anything.
           // Also prevents the selection boxes on notes from disappearing when they're 'moved' like this.
+
+          // This is where a repeat click on an ALREADY-SELECTED note/event actually lands
+          // (clicking a selected item arms it as a drag target on mouse-down, so if you don't
+          // end up moving it, we get here on release). This is the right spot to check for a
+          // quick double tap and delete instead, since a long-press-armed duplicate (dragIsDuplicate)
+          // shouldn't also be treated as a delete tap.
+          if (!dragIsDuplicate)
+          {
+            if (dragTargetNote != null && dragTargetNote.noteData != null)
+            {
+              if (isDoubleTap(dragTargetNote.noteData))
+              {
+                performCommand(new RemoveNotesCommand([dragTargetNote.noteData]));
+                clearLastTappedChartItem();
+              }
+              else
+              {
+                registerChartItemTap(dragTargetNote.noteData);
+              }
+            }
+            else if (dragTargetEvent != null && dragTargetEvent.eventData != null)
+            {
+              if (isDoubleTap(dragTargetEvent.eventData))
+              {
+                performCommand(new RemoveEventsCommand([dragTargetEvent.eventData]));
+                clearLastTappedChartItem();
+              }
+              else
+              {
+                registerChartItemTap(dragTargetEvent.eventData);
+              }
+            }
+          }
+
           dragTargetNote = null;
           dragTargetEvent = null;
           dragTargetCurrentStep = 0;
           dragTargetCurrentColumn = 0;
+          dragIsDuplicate = false;
           return;
         }
 
-        if (currentNoteSelection.length > 0 && currentEventSelection.length > 0)
+        if (dragIsDuplicate)
+        {
+          // Long-press armed duplicate mode: place copies at the drop position, leave originals untouched.
+          if (currentNoteSelection.length > 0 && currentEventSelection.length > 0)
+          {
+            // Both notes and events are selected.
+            performCommand(new DuplicateItemsCommand(currentNoteSelection, currentEventSelection, dragDistanceMs, dragDistanceColumns));
+          }
+          else if (currentNoteSelection.length > 0)
+          {
+            // Only notes are selected.
+            performCommand(new DuplicateNotesCommand(currentNoteSelection, dragDistanceMs, dragDistanceColumns));
+          }
+          else if (currentEventSelection.length > 0)
+          {
+            // Only events are selected.
+            performCommand(new DuplicateEventsCommand(currentEventSelection, dragDistanceMs));
+          }
+        }
+        else if (currentNoteSelection.length > 0 && currentEventSelection.length > 0)
         {
           // Both notes and events are selected.
           performCommand(new MoveItemsCommand(currentNoteSelection, currentEventSelection, dragDistanceMs, dragDistanceColumns));
@@ -5517,6 +5643,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
         // Finished dragging. Release the note at the new position.
         dragTargetNote = null;
         dragTargetEvent = null;
+        dragIsDuplicate = false;
 
         noteDisplayDirty = true;
 
@@ -5527,6 +5654,17 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
       {
         // Player is clicking and holding on a selected note or event to move the selection around.
         targetCursorMode = Grabbing;
+
+        // If the player has held down on the note/event without moving it yet, and has held
+        // long enough, arm "duplicate mode": releasing the drag will now create copies at the
+        // drop position instead of moving the originals. This is how touch/Android users
+        // duplicate a selection, since there's no Ctrl+C / Ctrl+V without a keyboard.
+        if (!dragIsDuplicate && dragTargetCurrentStep == 0 && dragTargetCurrentColumn == 0
+          && (Lib.getTimer() - dragPressStartTime) >= LONG_PRESS_DUPLICATE_MS)
+        {
+          dragIsDuplicate = true;
+          this.playSound(Paths.sound('ui/editors/chart-editor/charting-sounds/window-open'));
+        }
 
         // Scroll the screen if the mouse is above or below the grid.
         if (FlxG.mouse.viewY < MENU_BAR_HEIGHT)
@@ -5705,11 +5843,14 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 // Clicked a selected event, start dragging.
                 dragTargetNote = highlightedNote;
+                dragPressStartTime = Lib.getTimer();
+                dragIsDuplicate = false;
               }
               else
               {
                 // If you click an unselected note, and aren't holding Control, deselect everything else.
                 performCommand(new SetItemSelectionCommand([highlightedNote.noteData], []));
+                registerChartItemTap(highlightedNote.noteData);
               }
             }
             else if (highlightedEvent != null && highlightedEvent.eventData != null)
@@ -5718,11 +5859,14 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 // Clicked a selected event, start dragging.
                 dragTargetEvent = highlightedEvent;
+                dragPressStartTime = Lib.getTimer();
+                dragIsDuplicate = false;
               }
               else
               {
                 // If you click an unselected event, and aren't holding Control, deselect everything else.
                 performCommand(new SetItemSelectionCommand([], [highlightedEvent.eventData]));
+                registerChartItemTap(highlightedEvent.eventData);
               }
             }
             else if (highlightedHoldNote != null && highlightedHoldNote.noteData != null)
@@ -8052,10 +8196,89 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
     return note != null && currentNoteSelection.indexOf(note) != -1;
   }
 
+  /**
+   * Clears the "ghost" drag preview offset (overrideStepTime/overrideData) on the sprites of the
+   * currently-selected notes and events.
+   *
+   * This normally happens automatically once a drag ends and the notes are no longer being moved,
+   * BUT that logic only runs for notes that are still in the current selection. When duplicating
+   * (as opposed to moving), the current selection switches over to the new copies, leaving the
+   * original notes deselected while their sprites are still visible on the grid. Without this,
+   * the originals would visually stay stuck at the drag position (a stale ghost offset) until
+   * something forces a full redraw, since nothing else would ever clear their override anymore.
+   *
+   * Call this BEFORE reassigning `currentNoteSelection`/`currentEventSelection` away from the
+   * notes/events that were actually being dragged.
+   */
+  function clearDragGhostOverrides():Void
+  {
+    for (noteSprite in renderedNotes.members)
+    {
+      if (noteSprite == null || noteSprite.noteData == null) continue;
+      if (!isNoteSelected(noteSprite.noteData)) continue;
+
+      noteSprite.overrideStepTime = null;
+      noteSprite.overrideData = null;
+      noteSprite.updateNotePosition(renderedNotes);
+    }
+
+    for (holdNoteSprite in renderedHoldNotes.members)
+    {
+      if (holdNoteSprite == null || holdNoteSprite.noteData == null) continue;
+      if (!isNoteSelected(holdNoteSprite.noteData)) continue;
+
+      holdNoteSprite.overrideStepTime = null;
+      holdNoteSprite.overrideData = null;
+      holdNoteSprite.updateHoldNotePosition(renderedHoldNotes);
+    }
+
+    for (eventSprite in renderedEvents.members)
+    {
+      if (eventSprite == null || eventSprite.eventData == null) continue;
+      if (!isEventSelected(eventSprite.eventData)) continue;
+
+      eventSprite.overrideStepTime = null;
+      eventSprite.updateEventPosition(renderedEvents);
+    }
+  }
+
   function doesNoteStack(note:Null<SongNoteData>,
     curStackedNotes:Array<SongNoteData>):Bool
   {
     return note != null && curStackedNotes.contains(note);
+  }
+
+  /**
+   * Returns true if `item` (a SongNoteData or SongEventData) is the same item that was tapped
+   * last time, and the tap happened within DOUBLE_TAP_MS. Used to let touchscreen/Android users
+   * delete a selected note by tapping it twice, since there's no DELETE key to press.
+   */
+  function isDoubleTap(item:Dynamic):Bool
+  {
+    if (lastTappedChartItem == null || item == null) return false;
+    if (lastTappedChartItem != item) return false;
+
+    var now:Float = Lib.getTimer();
+    return (now - lastTappedChartItemTime) <= DOUBLE_TAP_MS;
+  }
+
+  /**
+   * Records that `item` was just tapped, so a subsequent quick tap on the same item
+   * can be detected as a double tap (see `isDoubleTap`).
+   */
+  function registerChartItemTap(item:Dynamic):Void
+  {
+    lastTappedChartItem = item;
+    lastTappedChartItemTime = Lib.getTimer();
+  }
+
+  /**
+   * Clears double-tap tracking, so the next tap (on anything) won't be mistaken for a double tap.
+   */
+  function clearLastTappedChartItem():Void
+  {
+    lastTappedChartItem = null;
+    lastTappedChartItemTime = 0;
   }
 
   @:nullSafety(Off)

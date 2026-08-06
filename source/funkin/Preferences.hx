@@ -313,6 +313,27 @@ class Preferences
   }
 
   /**
+   * If enabled, the game scales to fill the screen edge-to-edge (including
+   * under notches/cutouts on mobile). Disabling this letterboxes the game
+   * instead. Mobile only.
+   * @default `true`
+   */
+  public static var fullscreenScaleMode(get, set):Bool;
+
+  static function get_fullscreenScaleMode():Bool
+  {
+    return Save?.instance?.options?.fullscreenScaleMode ?? true;
+  }
+
+  static function set_fullscreenScaleMode(value:Bool):Bool
+  {
+    var save:Save = Save.instance;
+    save.options.fullscreenScaleMode = value;
+    Save.system.flush();
+    return value;
+  }
+
+  /**
    * A global audio offset in milliseconds.
    * This is used to sync the audio.
    * @default `0`
