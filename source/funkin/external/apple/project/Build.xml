@@ -10,10 +10,12 @@
 	<files id="external-apple">
 		<compilerflag value="-I${this_dir}/include" />
 		<file name="${this_dir}/src/AudioSession.mm" />
-		<file name="${this_dir}/src/MemoryUtil.mm" />
-		<file name="${this_dir}/src/ScreenUtil.mm" />
 		<file name="${this_dir}/src/FNFCExtern.mm" />
 		<file name="${this_dir}/src/KeyboardUtil.mm" />
+		<file name="${this_dir}/src/MemoryUtil.mm" />
+		<file name="${this_dir}/src/PathsUtil.mm" />
+		<file name="${this_dir}/src/ScreenUtil.mm" />
+		<file name="${this_dir}/src/URLSchemeExtern.mm" />
 	</files>
 	<target id="haxe">
 		<section unless="static_link">
@@ -21,6 +23,7 @@
 			<vflag name="-framework" value="Foundation" />
 			<vflag name="-framework" value="AVFAudio" />
 			<vflag name="-framework" value="GameController" />
+			<vflag name="-framework" value="ApplicationServices" if="macos" />
 		</section>
 		<files id="external-apple" />
 	</target>

@@ -37,6 +37,12 @@ import funkin.external.android.DataFolderUtil;
 #elseif ios
 import lime.system.System;
 #end
+#if FEATURE_ONE_CLICK_INSTALL
+import funkin.modding.install.ModInstaller;
+import funkin.modding.install.ModInstaller.OneClickMod;
+import funkin.modding.install.ModInstaller.OneClickRequest;
+import funkin.modding.install.OneClickInstallHandler;
+#end
 #if FEATURE_TOUCH_CONTROLS
 import funkin.mobile.input.ControlsHandler;
 import funkin.util.MathUtil;
@@ -124,6 +130,24 @@ class ModMenuState extends MusicBeatState
    * This should disable other interaction.
    */
   var exitingMenu:Bool = false;
+
+  #if FEATURE_ONE_CLICK_INSTALL
+  /**
+   * The overlay that drives a one-click install, from the confirmation prompt to the result.
+   */
+  var installPopup:ModMenuInstallPopup;
+
+  /**
+   * The mod a one-click install is waiting for the player to confirm.
+   */
+  var pendingInstall:Null<OneClickMod> = null;
+
+  /**
+   * Set once the player cancels, so a download that's already in flight gets thrown away.
+   */
+  var installCancelled:Bool = false;
+
+  #end
 
   var disabledModItems:ModMenuItemList = new ModMenuItemList();
   var enabledModItems:ModMenuItemList = new ModMenuItemList();
@@ -631,6 +655,14 @@ class ModMenuState extends MusicBeatState
     FlxG.stage.window.onDropBegin.add(startFileDropHover);
     FlxG.stage.window.onDropComplete.add(hideFileDropHover);
 
+    #if FEATURE_ONE_CLICK_INSTALL
+    installPopup = new ModMenuInstallPopup();
+    installPopup.zIndex = fileDrop.zIndex + 1;
+    installPopup.setCamera(camHUD);
+    add(installPopup);
+
+    #end
+
     FlxG.autoPause = false;
 
     // Adding the dropshadow blacklist here since everything is initialized by this point
@@ -900,6 +932,17 @@ class ModMenuState extends MusicBeatState
   {
     super.destroy();
 
+    #if FEATURE_ONE_CLICK_INSTALL
+    // Stops an in-flight download's callbacks from poking at a menu that no longer exists.
+    installCancelled = true;
+    pendingInstall = null;
+    ModInstaller.cancelDownload();
+    ModInstaller.cancelInstall();
+
+    // Leaving the menu means the player is done installing, so nothing should drag them back in.
+    OneClickInstallHandler.clearQueue();
+    #end
+
     FlxG.autoPause = Preferences.autoPause;
     FlxG.stage.window.onDropFile.remove(onDropFile);
     FlxG.stage.window.onDropBegin.remove(startFileDropHover);
@@ -929,17 +972,7 @@ class ModMenuState extends MusicBeatState
         return;
       }
 
-      var newItems = refreshModList();
-      for (item in newItems)
-      {
-        if (item.mod != null)
-        {
-          item.flashBackground();
-          break;
-        }
-      }
-
-      handleSelection();
+      highlightNewMod();
     }
     else if (Path.isAbsolute(path) && FileUtil.directoryExists(path))
     {
@@ -960,21 +993,228 @@ class ModMenuState extends MusicBeatState
         return;
       }
 
-      var newItems = refreshModList();
-      for (item in newItems)
-      {
-        if (item.mod != null)
-        {
-          item.flashBackground();
-          break;
-        }
-      }
-
-      handleSelection();
+      highlightNewMod();
     }
     else
       WindowUtil.showWarning('Invalid file type', 'Only .zip files and mod folders are supported for mod installation.');
   }
+
+  /**
+   * Rebuilds the list after something landed in the mods folder, then flashes whatever showed up.
+   * Shared by drag and drop and by one-click installs.
+   */
+  function highlightNewMod():Void
+  {
+    var newItems = refreshModList();
+    for (item in newItems)
+    {
+      if (item.mod != null)
+      {
+        item.flashBackground();
+        break;
+      }
+    }
+
+    handleSelection();
+  }
+
+  #if FEATURE_ONE_CLICK_INSTALL
+  /**
+   * Begins one click install of a mod from GameBanana. This will fetch the metadata, download the icon, and start the download.
+   *
+   * @param request The parsed link.
+   */
+  public function beginOneClickInstall(request:OneClickRequest):Void
+  {
+    if (installPopup == null) return;
+
+    // One at a time. A second link while one is running would fight over the popup.
+    if (installPopup.isBlocking())
+    {
+      trace('Ignoring a one-click install, one is already in progress.');
+      return;
+    }
+
+    pendingInstall = null;
+    installCancelled = false;
+
+    installPopup.showBusy('Mod Install', 'Looking this one up on GameBanana...');
+
+    ModInstaller.fetchMetadata(request, function(mod:OneClickMod):Void {
+      if (installCancelled) return;
+
+      if (ModInstaller.isAlreadyInstalled(mod))
+      {
+        installPopup.showResult(mod.name, 'Already installed.');
+        return;
+      }
+
+      pendingInstall = mod;
+
+      startOneClickInstall();
+
+      ModInstaller.downloadIcon(mod, function(bitmap:openfl.display.BitmapData):Void {
+        if (installCancelled || installPopup == null) return;
+
+        installPopup.setIcon(bitmap);
+      });
+    }, function(reason:String):Void {
+      if (installCancelled) return;
+
+      pendingInstall = null;
+      installPopup.showResult('Mod Install Failed', reason);
+    });
+  }
+
+  /**
+   * Whether a one-click install is currently on screen.
+   */
+  public function isInstalling():Bool
+  {
+    return installPopup != null && installPopup.isBlocking();
+  }
+
+  /**
+   * Tells the card how many more mods are lined up behind the one it's showing.
+   */
+  public function setInstallQueueCount(count:Int):Void
+  {
+    if (installPopup == null) return;
+
+    installPopup.setQueueCount(count);
+  }
+
+  /**
+   * Starts the download.
+   */
+  function startOneClickInstall():Void
+  {
+    final mod:Null<OneClickMod> = pendingInstall;
+    if (mod == null) return;
+
+    final credit:String = 'by ${mod.author}  (${formatFilesize(mod.filesize)})';
+
+    installPopup.showProgress(mod.name, '${credit}\nDownloading...', 0);
+
+    ModInstaller.download(mod, function(ratio:Float):Void
+      {
+        if (installCancelled) return;
+
+        installPopup.showProgress(mod.name, '${credit}\nDownloading... ${Math.round(ratio * 100)}%', ratio);
+      },
+      function(archivePath:String):Void
+      {
+        if (installCancelled) return;
+
+        installPopup.showProgress(mod.name, '${credit}\nInstalling...', 0);
+
+        ModInstaller.install(mod, archivePath, function(ratio:Float):Void
+          {
+            if (installCancelled) return;
+
+            installPopup.showProgress(mod.name, '${credit}\nInstalling... ${Math.round(ratio * 100)}%', ratio);
+          },
+          function(paths:Array<String>):Void
+          {
+            if (installCancelled) return;
+
+            queueRequirements(mod);
+
+            finishOneClickInstall(mod);
+          },
+          function(reason:String):Void
+          {
+            if (installCancelled) return;
+
+            installPopup.showResult(mod.name, 'Install failed.\n${reason}');
+          }
+        );
+      },
+      function(reason:String):Void
+      {
+        if (installCancelled) return;
+
+        installPopup.showResult(mod.name, reason);
+      }
+    );
+  }
+
+  /**
+   * Handles input while the install overlay is up, and swallows everything else.
+   */
+  function handleInstallPopupInput():Void
+  {
+    switch (installPopup.state)
+    {
+      case Downloading:
+        if (controls.BACK_P) cancelOneClickInstall();
+
+      case Result:
+        // The card clears itself, this is only here for a player who doesn't want to wait on it.
+        if (FlxG.keys.justPressed.ANY
+          || controls.ACCEPT_P
+          || controls.BACK_P #if FEATURE_TOUCH_CONTROLS || TouchUtil.justPressed #end)
+        {
+          installPopup.hide();
+        }
+
+      default:
+        // Busy and Hidden take no input.
+    }
+  }
+
+  /**
+   * Lines a mod's requirements up behind it, so they install the same way anything else does.
+   *
+   * @param mod The mod that was just installed.
+   */
+  function queueRequirements(mod:OneClickMod):Void
+  {
+    final requests:Array<OneClickRequest> = [];
+
+    for (requirement in mod.requirements)
+    {
+      final request:Null<OneClickRequest> = ModInstaller.requestForRequirement(requirement);
+
+      if (request == null) continue;
+
+      requests.push(request);
+    }
+
+    OneClickInstallHandler.enqueueNext(requests);
+  }
+
+  /**
+   * Refreshes the list and reports what landed.
+   */
+  function finishOneClickInstall(mod:OneClickMod):Void
+  {
+    highlightNewMod();
+
+    installPopup.showResult(mod.name, 'Installed. Drag it over to turn it on.');
+  }
+
+  function cancelOneClickInstall():Void
+  {
+    installCancelled = true;
+    pendingInstall = null;
+    ModInstaller.cancelDownload();
+    ModInstaller.cancelInstall();
+    installPopup.hide();
+  }
+
+  /**
+   * Renders a byte count the way a download dialog would.
+   */
+  function formatFilesize(bytes:Int):String
+  {
+    if (bytes <= 0) return '';
+
+    if (bytes < 1024 * 1024) return '${Math.round(bytes / 1024)} KB';
+
+    return '${Math.round(bytes / (1024 * 1024))} MB';
+  }
+  #end
 
   var secondCounter:Float = 0;
   var blinkTimer:Float = 0;
@@ -1089,6 +1329,15 @@ class ModMenuState extends MusicBeatState
 
   function handleInput(elapsed:Float):Void
   {
+    #if FEATURE_ONE_CLICK_INSTALL
+    // The install overlay is modal, so it gets first refusal on every input.
+    if (installPopup != null && installPopup.isBlocking())
+    {
+      handleInstallPopupInput();
+      return;
+    }
+    #end
+
     if (allowInput)
     {
       #if FEATURE_TOUCH_CONTROLS
@@ -1754,9 +2003,20 @@ class ModMenuState extends MusicBeatState
   }
   #end
 
+  var lastModIndex:Int = 0;
   function handleSelection():Void
   {
     FunkinSound.playOnce(Paths.sound('ui/main-menu/scroll-menu'), 0.4);
+
+    switch (selection)
+    {
+      case DisabledModList:
+        lastModIndex = enabledModItems.selectedItemIndex;
+      case EnabledModList:
+        lastModIndex = disabledModItems.selectedItemIndex;
+      default:
+        // nothing.
+    }
 
     if (selection != BackToMenu) playBackButtonAnimation('idle');
     disabledModItems.deselect();
@@ -1770,13 +2030,31 @@ class ModMenuState extends MusicBeatState
     switch (selection)
     {
       case DisabledModList:
-        if (oldSelection == OpenModsFolder && lastInput == 'up') disabledModItems.selectLastItem(lastSelectDir);
-        else
-          disabledModItems.selectFirstItem(lastSelectDir);
+        switch(oldSelection)
+        {
+          case OpenModsFolder:
+            if(lastInput == 'up') disabledModItems.selectLastItem(lastSelectDir);
+          case EnabledModList:
+            var offset = (disabledModItems.length - 1) - (enabledModItems.length - 1);
+
+            if (disabledModItems.modItems.indexOf(disabledModItems.modItems[lastModIndex + offset]) == -1) disabledModItems.selectLastItem(lastSelectDir);
+            else disabledModItems.selectItem(lastModIndex + offset, lastSelectDir);
+          default:
+            disabledModItems.selectFirstItem(lastSelectDir);
+        }
       case EnabledModList:
-        if (oldSelection == OpenModsFolder && lastInput == 'up') enabledModItems.selectLastItem(lastSelectDir);
-        else
-          enabledModItems.selectFirstItem(lastSelectDir);
+        switch(oldSelection)
+        {
+          case OpenModsFolder:
+            if(lastInput == 'up') enabledModItems.selectLastItem(lastSelectDir);
+          case DisabledModList:
+            var offset = (enabledModItems.length - 1) - (disabledModItems.length - 1);
+
+            if(enabledModItems.modItems.indexOf(enabledModItems.modItems[lastModIndex + offset]) == -1) enabledModItems.selectLastItem(lastSelectDir);
+            else enabledModItems.selectItem(lastModIndex + offset, lastSelectDir);
+          default:
+            enabledModItems.selectFirstItem(lastSelectDir);
+        }
       case OpenModsFolder:
         openFolderAnimator.playAnimation('select');
       case Done:
@@ -2439,7 +2717,11 @@ class ModMenuState extends MusicBeatState
     #elseif ios
     System.openURL('shareddocuments://');
     #else
+    #if sys
+    FileUtil.openFolder(Path.join([FileUtil.gameDirectory, PolymodHandler.MOD_FOLDER]));
+    #else
     FileUtil.openFolder(PolymodHandler.MOD_FOLDER);
+    #end
     #end
     openFolderAnimator.playAnimation('select');
   }

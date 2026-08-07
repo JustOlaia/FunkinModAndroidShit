@@ -116,7 +116,7 @@ class Project extends HXProject
 
   static final ANDROID_EXTENSIONS:Array<String> = [
     "funkin.extensions.CallbackUtil",
-    "funkin.extensions.FNFCExtension",
+    "funkin.extensions.FNFLoaderExtension",
     "funkin.extensions.AudioSession"
   ];
 
@@ -438,6 +438,13 @@ class Project extends HXProject
   static final FEATURE_NAUGHTYNESS:FeatureFlag = "FEATURE_NAUGHTYNESS";
 
   /**
+   * `-DFEATURE_ONE_CLICK_INSTALL`
+   * If this flag is enabled, the game registers itself as the handler for the `funkin:` URL
+   * scheme.
+   */
+  static final FEATURE_ONE_CLICK_INSTALL:FeatureFlag = "FEATURE_ONE_CLICK_INSTALL";
+
+  /**
    * `-DFEATURE_NEWGROUNDS`
    * If this flag is enabled, the game will enable the Newgrounds library.
    * This is used to provide Medal and Leaderboard support.
@@ -680,11 +687,6 @@ class Project extends HXProject
   {
     this.meta.title = isMobile() ? TITLE_MOBILE : TITLE;
 
-    // ios uses this character code instead of spaces...
-    // We don't have spaces in our title for mobile anymore
-    // But keeping incase anybody source-modding ever does add spaces
-    if (isIOS()) this.meta.title = ~/ /ig.replace(TITLE_MOBILE, "\u2002");
-
     this.meta.version = VERSION;
     this.meta.packageName = PACKAGE_NAME;
     this.meta.company = COMPANY;
@@ -709,17 +711,6 @@ class Project extends HXProject
 
     // Set the build number, required for publishing the game to mobile stores.
     this.meta.buildNumber = Std.string(BUILD_NUMBER);
-
-    // These values are only used by the SWF target I think.
-    // this.app.path
-    // this.app.init
-    // this.app.swfVersion
-    // this.app.url
-
-    // These values are only used by... FIREFOX MARKETPLACE WHAT?
-    // this.meta.description = "";
-    // this.meta.companyId = COMPANY;
-    // this.meta.companyUrl = COMPANY;
 
     // Configure the window.
     // Automatically configure FPS.
@@ -868,20 +859,10 @@ class Project extends HXProject
           info('Target Architecture: x86');
         case Architecture.X64:
           info('Target Architecture: x64');
-        case Architecture.ARMV5:
-          info('Target Architecture: ARMv5');
-        case Architecture.ARMV6:
-          info('Target Architecture: ARMv6');
         case Architecture.ARMV7:
           info('Target Architecture: ARMv7');
-        case Architecture.ARMV7S:
-          info('Target Architecture: ARMv7S');
         case Architecture.ARM64:
-          info('Target Architecture: ARMx64');
-        case Architecture.MIPS:
-          info('Target Architecture: MIPS');
-        case Architecture.MIPSEL:
-          info('Target Architecture: MIPSEL');
+          info('Target Architecture: ARM64');
         case null:
           if (!isWeb())
           {
@@ -997,6 +978,10 @@ class Project extends HXProject
 
     // Should be true except on mobile builds.
     FEATURE_FILE_DROP.apply(this, !isMobile());
+
+    // Should be true only on Desktop builds.
+    // Registering a URL scheme requires OS level access we don't have on web or mobile.
+    FEATURE_ONE_CLICK_INSTALL.apply(this, isDesktop() || isMobile());
 
     // The audio context issues which require the user to click before playing
     // only exist on web builds.
@@ -1267,13 +1252,13 @@ class Project extends HXProject
     modsFolderProvider.set('android:exported', 'true');
     modsFolderProvider.set('android:permission', 'android.permission.MANAGE_DOCUMENTS');
 
-    final intentFilter:Xml = Xml.createElement('intent-filter');
+    final fnfcIntentFilter:Xml = Xml.createElement('intent-filter');
 
     final action:Xml = Xml.createElement('action');
     action.set('android:name', 'android.content.action.DOCUMENTS_PROVIDER');
-    intentFilter.addChild(action);
+    fnfcIntentFilter.addChild(action);
 
-    modsFolderProvider.addChild(intentFilter);
+    modsFolderProvider.addChild(fnfcIntentFilter);
 
     @:nullSafety(Off)
     {
@@ -1287,58 +1272,94 @@ class Project extends HXProject
       }
     }
 
-    // Custom android.activity XML Children for the AndroidManifest
-    final intentFilter:Xml = Xml.createElement('intent-filter');
+    final intentFilters:Array<Xml> = [];
 
-    final action:Xml = Xml.createElement('action');
-    action.set('android:name', 'android.intent.action.VIEW');
-    intentFilter.addChild(action);
-
-    final intentFilterCategories:Array<String> = [
-      "android.intent.category.DEFAULT",
-      "android.intent.category.BROWSABLE"
-    ];
-
-    for (categoryName in intentFilterCategories)
     {
-      final category:Xml = Xml.createElement('category');
-      category.set('android:name', categoryName);
-      intentFilter.addChild(category);
+      // FNFC Intent Filter
+      final fnfcIntentFilter:Xml = Xml.createElement('intent-filter');
+
+      final action:Xml = Xml.createElement('action');
+      action.set('android:name', 'android.intent.action.VIEW');
+      fnfcIntentFilter.addChild(action);
+
+      final fnfcIntentFilterCategories:Array<String> = [
+        "android.intent.category.DEFAULT",
+        "android.intent.category.BROWSABLE"
+      ];
+
+      for (categoryName in fnfcIntentFilterCategories)
+      {
+        final category:Xml = Xml.createElement('category');
+        category.set('android:name', categoryName);
+        fnfcIntentFilter.addChild(category);
+      }
+
+      final fnfcIntentFilterDatas:Map<String, Array<String>> = [
+        "android:mimeType" => ["application/zip"], // When this is added, it makes the game show up only when it's a FNFC file.
+        // But it also for some reason make it not show up at all in ZArchiver no matter what the file is...
+        // "android:host"        => ["*"],
+        "android:scheme" => ["file", "content"], // I think having all these makes it so the extension check would work even when the files has dots like "epic-song-v2.0.fnfc"
+        "android:pathPattern" => [
+          ".*\\.fnfc",
+          ".*\\..*\\.fnfc",
+          ".*\\..*\\..*\\.fnfc",
+          ".*\\..*\\..*\\..*\\.fnfc",
+          ".*\\..*\\..*\\..*\\..*\\.fnfc"
+        ]
+      ];
+
+      for (key => values in fnfcIntentFilterDatas)
+      {
+        for (value in values)
+        {
+          final data:Xml = Xml.createElement("data");
+          data.set(key, value);
+          fnfcIntentFilter.addChild(data);
+        }
+      }
+
+      intentFilters.push(fnfcIntentFilter);
     }
 
-    final intentFilterDatas:Map<String, Array<String>> = [
-      "android:mimeType" => ["application/zip"], // When this is added, it makes the game show up only when it's a FNFC file.
-      // But it also for some reason make it not show up at all in ZArchiver no matter what the file is...
-      // "android:host"        => ["*"],
-      "android:scheme" => ["file", "content"], // I think having all these makes it so the extension check would work even when the files has dots like "epic-song-v2.0.fnfc"
-      "android:pathPattern" => [
-        ".*\\.fnfc",
-        ".*\\..*\\.fnfc",
-        ".*\\..*\\..*\\.fnfc",
-        ".*\\..*\\..*\\..*\\.fnfc",
-        ".*\\..*\\..*\\..*\\..*\\.fnfc"
-      ]
-    ];
-
-    for (key => values in intentFilterDatas)
     {
-      for (value in values)
+      // FNFMod URL Scheme Intent Filter
+      final fnfModUrlSchemeIntentFilter:Xml = Xml.createElement("intent-filter");
+
+      final action:Xml = Xml.createElement("action");
+      action.set("android:name", "android.intent.action.VIEW");
+      fnfModUrlSchemeIntentFilter.addChild(action);
+
+      final fnfModUrlSchemeIntentFilterCategories:Array<String> = [
+        "android.intent.category.DEFAULT",
+        "android.intent.category.BROWSABLE"
+      ];
+
+      for (categoryName in fnfModUrlSchemeIntentFilterCategories)
       {
-        final data:Xml = Xml.createElement("data");
-        data.set(key, value);
-        intentFilter.addChild(data);
+        final category:Xml = Xml.createElement("category");
+        category.set("android:name", categoryName);
+        fnfModUrlSchemeIntentFilter.addChild(category);
       }
+
+      final data:Xml = Xml.createElement("data");
+      data.set("android:scheme", "funkin");
+      fnfModUrlSchemeIntentFilter.addChild(data);
+
+      intentFilters.push(fnfModUrlSchemeIntentFilter);
     }
 
-    @:nullSafety(Off)
+    for (filter in intentFilters)
     {
-      if (config.get('android.activity').xmlChildren != null)
+      @:nullSafety(Off)
       {
-        config.get('android.activity').xmlChildren.push(Printer.print(intentFilter, true));
-      }
-      else
-      {
-        config.get('android.activity').xmlChildren = [Printer.print(intentFilter, true)];
+        if (config.get('android.activity').xmlChildren != null)
+        {
+          config.get('android.activity').xmlChildren.push(Printer.print(filter, true));
+        }
+        else
+        {
+          config.get('android.activity').xmlChildren = [Printer.print(filter, true)];
+        }
       }
     }
 
@@ -1357,21 +1378,6 @@ class Project extends HXProject
   {
     // launchStoryboard = new LaunchStoryboard();
     // launchStoryboard.path = "./LaunchScreen.storyboard";
-
-    // Grab the stuff from a fake plist and then embbed it into the original to maintain a clear format!
-    final documentTypes:String = File.getContent("documentTypes.plist");
-
-    @:nullSafety(Off)
-    {
-      if (config.getArrayString('ios.info-plist-children') != null)
-      {
-        config.set('ios.info-plist-children', config.getArrayString('ios.info-plist-children').concat([documentTypes]));
-      }
-      else
-      {
-        config.set('ios.info-plist-children', [documentTypes]);
-      }
-    }
   }
 
   function configurePolymod()
