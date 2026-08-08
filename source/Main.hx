@@ -135,6 +135,17 @@ class Main extends Sprite
     // George recommends binding the save before FlxGame is created.
     Save.load();
 
+    #if (mobile && android)
+    // Prompt (once) for battery-optimization exemption. Without this, Android can kill the app
+    // while it's briefly backgrounded (e.g. picking a file in the chart editor), which shows up
+    // as a black screen, a lost chart, or the app freezing entirely. Fires on first launch only.
+    if (!Preferences.hasRequestedBatteryExemption)
+    {
+      extension.androidtools.Settings.requestSetting('REQUEST_IGNORE_BATTERY_OPTIMIZATIONS');
+      Preferences.hasRequestedBatteryExemption = true;
+    }
+    #end
+
     // Loading mods happens in the preloader now.
     // funkin.modding.PolymodHandler.loadEnabledMods()
 

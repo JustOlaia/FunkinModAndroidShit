@@ -1244,6 +1244,12 @@ class Project extends HXProject
   {
     javaPaths.push(Path.join([SOURCE_DIR, 'funkin/external/android/java']));
 
+    // Lets us show the direct "let this app run unrestricted in the background?" system dialog
+    // (via extension-androidtools' Settings.requestSetting), instead of only being able to link
+    // to the general battery-optimization settings list. This is a "normal" permission — it's
+    // auto-granted at install, no runtime prompt is needed just to declare it.
+    config.push('android.permission', 'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', true);
+
     // Custom android.application XML Children for the AndroidManifest
     final modsFolderProvider:Xml = Xml.createElement('provider');
     modsFolderProvider.set('android:authorities', '$PACKAGE_NAME.docprovider');

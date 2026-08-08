@@ -334,6 +334,27 @@ class Preferences
   }
 
   /**
+   * Whether the game has already prompted the player (once) to exempt the app from Android's
+   * battery optimizations. Doesn't track whether they said yes, only whether we've asked, so we
+   * never nag more than once. Mobile only.
+   * @default `false`
+   */
+  public static var hasRequestedBatteryExemption(get, set):Bool;
+
+  static function get_hasRequestedBatteryExemption():Bool
+  {
+    return Save?.instance?.options?.hasRequestedBatteryExemption ?? false;
+  }
+
+  static function set_hasRequestedBatteryExemption(value:Bool):Bool
+  {
+    var save:Save = Save.instance;
+    save.options.hasRequestedBatteryExemption = value;
+    Save.system.flush();
+    return value;
+  }
+
+  /**
    * A global audio offset in milliseconds.
    * This is used to sync the audio.
    * @default `0`

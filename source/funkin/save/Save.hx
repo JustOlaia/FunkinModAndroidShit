@@ -143,6 +143,7 @@ class Save implements ConsoleClass implements ISerializable
         strumlineBackgroundOpacity: 0,
         autoFullscreen: false,
         fullscreenScaleMode: true,
+        hasRequestedBatteryExemption: false,
         globalOffset: 0,
         audioVisualOffset: 0,
         unlockedFramerate: false,
@@ -1441,6 +1442,14 @@ typedef SaveDataOptions =
    * @default `true`
    */
   var fullscreenScaleMode:Bool;
+
+  /**
+   * Whether the game has already prompted the player (once) to exempt the app from Android's
+   * battery optimizations. Doesn't track whether they said yes, only whether we've asked, so we
+   * never nag more than once. Mobile only.
+   * @default `false`
+   */
+  var hasRequestedBatteryExemption:Bool;
 
   /**
    * Offset the user's inputs by this many ms.
