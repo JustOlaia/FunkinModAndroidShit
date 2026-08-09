@@ -7178,7 +7178,11 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
       }
       else
       {
+        #if mobile
+        this.exportCurrentChartToFNFC(true, null, function(path:String)
+      #else
         this.exportCurrentChartToFNFC(false, null, function(path:String)
+        #end
         {
           // CTRL + SHIFT + S Successful
           // Just to be sure
