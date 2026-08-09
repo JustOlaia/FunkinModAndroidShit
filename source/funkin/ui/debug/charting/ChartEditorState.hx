@@ -3477,15 +3477,6 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
     menubarItemOpenChart.onClick = _ -> this.openBrowseFNFC(true);
     menubarItemSaveChart.onClick = _ ->
     {
-      #if mobile
-      this.exportCurrentChartToSavesFolder((path:String) ->
-      {
-        this.success('Success!', '${Path.withoutDirectory(path)} has been saved.');
-      }, () ->
-      {
-        this.failure('Error!', 'Failed to save chart.');
-      });
-      #else
       if (currentWorkingFilePath != null)
       {
         this.exportCurrentChartToFNFC(true, currentWorkingFilePath);
@@ -3502,28 +3493,14 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
           // CTRL + SHIFT + S Cancelled
         });
       }
-      #end
     };
-    menubarItemSaveChartAs.onClick = _ ->
+    menubarItemSaveChartAs.onClick = _ -> this.exportCurrentChartToFNFC(false, null, (path:String) ->
     {
-      #if mobile
-      this.exportCurrentChartToSavesFolder((path:String) ->
-      {
-        this.success('Success!', '${Path.withoutDirectory(path)} has been saved.');
-      }, () ->
-      {
-        this.failure('Error!', 'Failed to save chart.');
-      });
-      #else
-      this.exportCurrentChartToFNFC(false, null, (path:String) ->
-      {
-        // CTRL + SHIFT + S Successful
-        this.success('Saved Chart', 'Chart saved successfully to ${path}.');
-      }, () -> {
-          // CTRL + SHIFT + S Cancelled
-      });
-      #end
-    };
+      // CTRL + SHIFT + S Successful
+      this.success('Saved Chart', 'Chart saved successfully to ${path}.');
+    }, () -> {
+        // CTRL + SHIFT + S Cancelled
+    });
     menubarItemExportChartAsFolder.onClick = _ -> this.exportCurrentChartToFolder(null, (path:String) ->
     {
       this.success('Exported Chart', 'Chart exported successfully to ${path}.');

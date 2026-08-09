@@ -31,12 +31,6 @@ class ChartEditorImportExportHandler
   public static final BACKUPS_PATH:String = './backups/charts/';
 
   /**
-   * The local file path saved charts go to on mobile, where there's no OS file picker to prompt
-   * for a save location. Sits alongside the `backups`/`mods` folders.
-   */
-  public static final SAVES_PATH:String = './saves/';
-
-  /**
    * Loads an FNFC chart into the Chart Editor from its parsed contents.
    *
    * @param state The Chart Editor state to apply the loaded data to.
@@ -403,49 +397,6 @@ class ChartEditorImportExportHandler
       catch (e)
       {
       }
-    }
-  }
-
-  /**
-   * Build an `.fnfc` file from the current chart data and write it straight to a fixed, app-owned
-   * `saves/` folder (alongside `backups`/`mods`) instead of prompting with an OS file dialog.
-   *
-   * Meant for mobile, where launching the native file picker means backgrounding the app for
-   * however long the picker takes — which on Android risks the OS reclaiming the game's process
-   * under memory pressure while it's not in the foreground. Writing straight to a known path never
-   * leaves the app's own Activity, so there's nothing for Android to background in the first place.
-   *
-   * @param state The Chart Editor state containing the chart data to export.
-   * @param onSaveCb Callback for when the file is saved, given the full path it was written to.
-   * @param onFailureCb Callback for when saving fails.
-   */
-  public static function exportCurrentChartToSavesFolder(state:ChartEditorState, ?onSaveCb:String->Void, ?onFailureCb:Void->Void):Void
-  {
-    var fnfcData:FNFCData = ChartEditorImportExportHandler.buildFNFCDataFromCurrentChart(state);
-    var zipEntries:Array<haxe.zip.Entry> = FNFCUtil.buildZIPEntriesFromFNFCData(fnfcData);
-
-    if (state.currentSongId == '') state.currentSongName = 'New Chart'; // Hopefully no one notices this silliness
-
-    var fileName:String = '${state.currentSongId}.${Constants.EXT_CHART}';
-    var targetPath:String = Path.join([SAVES_PATH, fileName]);
-
-    trace('Exporting ${zipEntries.length} files to "$targetPath"...');
-
-    try
-    {
-      FileUtil.createDirIfNotExists(SAVES_PATH);
-      FileUtil.saveFilesAsZIPToPath(zipEntries, targetPath, Force);
-
-      state.currentWorkingFilePath = targetPath;
-      state.applyWindowTitle();
-      state.saveDataDirty = false;
-
-      if (onSaveCb != null) onSaveCb(targetPath);
-    }
-    catch (e)
-    {
-      trace(' ERROR '.error() + ' Could not save chart to "$targetPath": $e');
-      if (onFailureCb != null) onFailureCb();
     }
   }
 
