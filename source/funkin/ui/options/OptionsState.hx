@@ -228,7 +228,7 @@ class OptionsMenu extends Page<OptionsMenuPageName>
       InAppPurchasesUtil.restorePurchases();
     });
     #end
-    #if FEATURE_CHART_EDITOR && #if (isMobile())
+    #if (FEATURE_CHART_EDITOR && mobile)
     createItem('OPEN CHART EDITOR', function() FlxG.switchState(() -> new ChartEditorState()));
     #end
     #if FEATURE_TOUCH_CONTROLS
