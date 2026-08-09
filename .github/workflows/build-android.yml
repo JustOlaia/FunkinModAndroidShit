@@ -65,8 +65,12 @@ jobs:
           cd .haxelib/lime/git
           git submodule update --init --recursive
 
-      # hxcpp desde git necesita compilar sus tools primero
+      # hxcpp desde git necesita compilar sus tools primero.
+      # Skipped on cache hit: the compiled tool binaries already live inside
+      # the restored .haxelib/hxcpp tree, so recompiling here would just
+      # redo work the cache already gave us.
       - name: Build hxcpp tools
+        if: steps.cache-haxelibs.outputs.cache-hit != 'true'
         run: |
           cd .haxelib/hxcpp/git/tools/hxcpp
           haxe compile.hxml
