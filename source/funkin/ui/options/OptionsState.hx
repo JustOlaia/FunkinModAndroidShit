@@ -186,7 +186,6 @@ class OptionsMenu extends Page<OptionsMenuPageName>
     add(items = new TextMenuList());
 
     createItem('PREFERENCES', function() codex.switchPage(Preferences));
-    createItem('CHART EDITOR', function() FlxG.switchState(() -> new ChartEditorState()));
     #if FEATURE_TOUCH_CONTROLS
     if (ControlsHandler.hasExternalInputDevice)
     #end
@@ -228,6 +227,9 @@ class OptionsMenu extends Page<OptionsMenuPageName>
     {
       InAppPurchasesUtil.restorePurchases();
     });
+    #end
+    #if FEATURE_CHART_EDITOR
+    createItem('Open Chart Editor', function() FlxG.switchState(() -> new ChartEditorState()));
     #end
     #if FEATURE_TOUCH_CONTROLS
     createItem('OPEN MOD MENU', function()
