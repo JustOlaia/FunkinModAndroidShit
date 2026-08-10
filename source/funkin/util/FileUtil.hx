@@ -420,7 +420,7 @@ class FileUtil
     // instead of zipping everything into one file like the old mobile fallback did.
     trace('Browsing for a save location to extract files to...');
 
-    saveFile('Choose a location to export files to...', null, null, function(path:String):Void
+    saveFile('Choose a location to export files to...', false, null, function(path:String):Void // first argument was null before, modified to false just for it to compile since null gives errors
     {
       var targetDirectory:String = Path.withoutExtension(path);
 
