@@ -404,6 +404,41 @@ class FileUtil
         onSaveAll(paths);
       }
     }, onCancel, defaultPath);
+    #elseif mobile
+    // Mobile has no "pick a folder to write arbitrary files into" dialog (unlike desktop's
+    // browseForDirectory), so we reuse the same single-location save picker that Save Chart As
+    // already uses successfully on mobile (FileUtil.saveFile -> lime.ui.FileDialog). We pass no
+    // data so the dialog itself doesn't write anything; we just use the chosen location (with any
+    // extension stripped) as the target folder name, then extract each resource into it for real,
+    // instead of zipping everything into one file like the old mobile fallback did.
+    trace('Browsing for a save location to extract files to...');
+
+    saveFile('Choose a location to export files to...', null, null, function(path:String):Void
+    {
+      var targetDirectory:String = Path.withoutExtension(path);
+
+      var paths:Array<String> = new Array<String>();
+
+      for (resource in resources)
+      {
+        if (resource.data == null)
+        {
+          trace('WARNING: File ${resource.fileName} has no data or content. Skipping.');
+          continue;
+        }
+
+        var filePath:String = Path.join([targetDirectory, resource.fileName]);
+
+        Bytes.toFile(filePath, resource.data);
+
+        paths.push(filePath);
+      }
+
+      if (onSaveAll != null)
+      {
+        onSaveAll(paths);
+      }
+    }, onCancel, defaultPath);
     #else
     saveFilesAsZIP(resources, onSaveAll, onCancel, defaultPath, force);
     #end

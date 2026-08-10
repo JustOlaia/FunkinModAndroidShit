@@ -5193,6 +5193,38 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
       }
       else
       {
+        #if mobile
+        // Mobile has no SHIFT key, so the SHIFT-gated selection box trigger used on other
+        // platforms is unreachable via touch. Restore the old (pre-SHIFT-gate) behavior here:
+        // dragging outside the note grid (or on the selection border) starts a selection box,
+        // and dragging the playhead / note preview works the same as before, unconditionally.
+        if (measureTicks != null && gridPlayheadScrollArea.containsXY(FlxG.mouse.viewX, FlxG.mouse.viewY) && !isCursorOverHaxeUI)
+        {
+          gridPlayheadScrollAreaPressed = true;
+          // Stop audio playback while dragging on the grid playhead.
+          if ((audioInstTrack != null && audioInstTrack.isPlaying) || audioVocalTrackGroup.playing)
+          {
+            playbarHeadDraggingWasPlaying = true;
+            stopAudioPlayback();
+          }
+        }
+        else if (notePreview != null && FlxG.mouse.overlaps(notePreview) && !isCursorOverHaxeUI)
+        {
+          // Clicked note preview
+          notePreviewScrollAreaStartPos = new FlxPoint(FlxG.mouse.viewX, FlxG.mouse.viewY);
+        }
+        else if (!isCursorOverHaxeUI && (!overlapsGrid || overlapsSelectionBorder))
+        {
+          trace('Started selection box at (${FlxG.mouse.viewX}, ${FlxG.mouse.viewY})');
+          selectionBoxStartPos = new FlxPoint(FlxG.mouse.viewX, FlxG.mouse.viewY);
+          // Drawing selection box.
+          targetCursorMode = Crosshair;
+        }
+        else if (overlapsSelection)
+        {
+          // Do nothing
+        }
+        #else
         if (!FlxG.keys.pressed.SHIFT)
         {
           // Dragging playhead
@@ -5219,6 +5251,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
           // Drawing selection box.
           targetCursorMode = Crosshair;
         }
+        #end
       }
     }
 
