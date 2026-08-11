@@ -111,6 +111,91 @@ class FileUtil
    */
   public static final INVALID_CHARS:EReg = ~/[:*?"<>|\n\r\t]/g;
 
+  #if mobile
+  /**
+   * Cosmetic only: turns an Android `content://...` SAF URI into a normal-looking Android
+   * storage path for display in success messages (e.g. "Chart saved successfully to ...").
+   * This does NOT change where anything is actually written - it just makes the message the
+   * user sees look like a real path instead of a raw URI. Falls back to the original string
+   * unchanged if it doesn't recognize the URI shape.
+   */
+  public static function prettifyPathForDisplay(path:Null<String>):String
+  {
+    if (path == null) return '';
+
+    if (!path.startsWith('content://')) return path;
+
+    // Typical shape:
+    // content://com.android.externalstorage.documents/document/primary%3ADownload%2Ffoo%2Fbar.fnfc
+    final PRIMARY_MARKER:String = '/document/primary%3A';
+    final markerIndex:Int = path.indexOf(PRIMARY_MARKER);
+
+    if (markerIndex == -1) return path;
+
+    final encodedRelativePath:String = path.substring(markerIndex + PRIMARY_MARKER.length);
+
+    var relativePath:String = encodedRelativePath;
+
+    try
+    {
+      relativePath = StringTools.urlDecode(encodedRelativePath);
+    }
+    catch (e)
+    {
+      // If decoding fails for whatever reason, just fall back to the raw (encoded) remainder
+      // rather than showing nothing.
+    }
+
+    return '/storage/emulated/0/${relativePath}';
+  }
+
+  /**
+   * Cleans up the junk sibling folder (named literally `content:`) that Android's file-writing
+   * path can leave behind in the app's own private storage, next to the `backups` folder, as a
+   * side effect of writing through a content:// SAF URI. Safe to call after every successful
+   * save; does nothing if the folder isn't there.
+   */
+  public static function cleanupAndroidContentJunkFolder():Void
+  {
+    #if sys
+    final junkPath:String = Path.join([Sys.getCwd(), 'content:']);
+
+    try
+    {
+      if (sys.FileSystem.exists(junkPath) && sys.FileSystem.isDirectory(junkPath))
+      {
+        deleteDirectoryRecursive(junkPath);
+      }
+    }
+    catch (e)
+    {
+      trace('WARNING: Failed to clean up Android content:// junk folder: ${e}');
+    }
+    #end
+  }
+
+  #if sys
+  static function deleteDirectoryRecursive(dirPath:String):Void
+  {
+    for (entry in sys.FileSystem.readDirectory(dirPath))
+    {
+      final entryPath:String = Path.join([dirPath, entry]);
+
+      if (sys.FileSystem.isDirectory(entryPath))
+      {
+        deleteDirectoryRecursive(entryPath);
+      }
+      else
+      {
+        sys.FileSystem.deleteFile(entryPath);
+      }
+    }
+
+    sys.FileSystem.deleteDirectory(dirPath);
+  }
+  #end
+  #end
+
   #if sys
   private static var _gameDirectory:Null<String> = null;
 
@@ -332,14 +417,7 @@ class FileUtil
     {
       if (filepath != null)
       {
-        // On Android, the picker returns a content:// SAF URI rather than a normal filesystem
-        // path. lime's native Android FileDialog implementation already writes the real bytes
-        // through that URI before this callback fires. If we then also call Bytes.toFile() on
-        // the raw URI string here, it gets misread as a literal relative path (since it's not a
-        // real filesystem path), which creates a junk nested folder tree mirroring the URI text
-        // inside the app's private storage instead of writing anywhere useful. Skip the redundant
-        // write for content:// URIs; only do it ourselves for real filesystem paths.
-        if (data != null && !filepath.startsWith('content://'))
+        if (data != null)
         {
           Bytes.toFile(filepath, data);
         }
@@ -417,7 +495,7 @@ class FileUtil
     // (the existing onActivityResult bridge doesn't even pass the result Intent back, so a real
     // ACTION_OPEN_DOCUMENT_TREE folder picker isn't wireable here without touching Java).
     // Instead, reuse the same single-file saveFile() picker that Save Chart As already uses
-    // successfully on mobile (including its content:// skip-write fix), once per resource, so
+    // successfully on mobile, once per resource, so
     // the user gets a normal system save prompt for each file in turn instead of one broken
     // multi-file drop or a zip.
     trace('Saving files one at a time (no folder-picker available on mobile without native code)...');

@@ -3486,14 +3486,14 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
       if (currentWorkingFilePath != null)
       {
         this.exportCurrentChartToFNFC(true, currentWorkingFilePath);
-        this.success('Saved Chart', 'Chart saved successfully to ${currentWorkingFilePath}.');
+        notifyChartPathSaved('Saved Chart', 'saved', currentWorkingFilePath);
       }
       else
       {
         this.exportCurrentChartToFNFC(false, null, function(path:String)
         {
           // CTRL + SHIFT + S Successful
-          this.success('Saved Chart', 'Chart saved successfully to ${path}.');
+          notifyChartPathSaved('Saved Chart', 'saved', path);
         }, function()
         {
           // CTRL + SHIFT + S Cancelled
@@ -3503,13 +3503,13 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
     menubarItemSaveChartAs.onClick = _ -> this.exportCurrentChartToFNFC(false, null, (path:String) ->
     {
       // CTRL + SHIFT + S Successful
-      this.success('Saved Chart', 'Chart saved successfully to ${path}.');
+      notifyChartPathSaved('Saved Chart', 'saved', path);
     }, () -> {
         // CTRL + SHIFT + S Cancelled
     });
     menubarItemExportChartAsFolder.onClick = _ -> this.exportCurrentChartToFolder(null, (path:String) ->
     {
-      this.success('Exported Chart', 'Chart exported successfully to ${path}.');
+      notifyChartPathSaved('Exported Chart', 'exported', path);
     }, () -> {
         // Cancelled
     });
@@ -3938,6 +3938,22 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
         }]);
       }
     }
+    #end
+  }
+
+  /**
+   * Shows a "Chart saved/exported successfully" toast for the given path. On mobile, this also
+   * cosmetically prettifies the raw content:// URI into a normal-looking Android storage path
+   * for display purposes only, and cleans up the junk `content:` sibling folder that Android's
+   * save flow leaves behind in the app's private storage.
+   */
+  function notifyChartPathSaved(title:String, verb:String, path:String):Void
+  {
+    #if mobile
+    FileUtil.cleanupAndroidContentJunkFolder();
+    this.success(title, 'Chart ${verb} successfully to ${FileUtil.prettifyPathForDisplay(path)}.');
+    #else
+    this.success(title, 'Chart ${verb} successfully to ${path}.');
     #end
   }
 
@@ -6786,7 +6802,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
         this.exportCurrentChartToFNFC(false, null, function(path:String)
         {
           // CTRL + SHIFT + S Successful
-          this.success('Saved Chart', 'Chart saved successfully to ${path}.');
+          notifyChartPathSaved('Saved Chart', 'saved', path);
         }, function()
         {
           // CTRL + SHIFT + S Cancelled
@@ -6796,7 +6812,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
       {
         // CTRL + S = Save Chart
         this.exportCurrentChartToFNFC(true, currentWorkingFilePath);
-        this.success('Saved Chart', 'Chart saved successfully to ${currentWorkingFilePath}.');
+        notifyChartPathSaved('Saved Chart', 'saved', currentWorkingFilePath);
       }
     }
 
