@@ -1052,6 +1052,28 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
    * Max delay in milliseconds between two taps on the same note/event for it to count as a double tap.
    */
   static final DOUBLE_TAP_MS:Float = 400;
+
+  /**
+   * Timestamp (in milliseconds) until which the note/event/hold-note placement "ghost" preview
+   * should stay hidden. Used right after a double-tap delete so the just-deleted note doesn't
+   * appear to instantly turn translucent (which is actually the ghost preview showing through,
+   * since your finger is still resting on the now-empty cell) - it stays hidden briefly instead,
+   * so the note just cleanly disappears.
+   */
+  var ghostNoteSuppressedUntil:Float = 0;
+
+  /**
+   * Briefly hides the note/event/hold-note placement ghost preview. Call this right after a
+   * double-tap delete on mobile.
+   */
+  function suppressGhostNoteBriefly():Void
+  {
+    ghostNoteSuppressedUntil = Lib.getTimer() + 350;
+
+    if (gridGhostNote != null) gridGhostNote.visible = false;
+    if (gridGhostHoldNote != null) gridGhostHoldNote.visible = false;
+    if (gridGhostEvent != null) gridGhostEvent.visible = false;
+  }
   #end
 
   /**
@@ -5513,6 +5535,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveNotesCommand([highlightedNote.noteData]));
                 clearLastTappedChartItem();
+                suppressGhostNoteBriefly();
               }
               else
               {
@@ -5527,6 +5550,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveEventsCommand([highlightedEvent.eventData]));
                 clearLastTappedChartItem();
+                suppressGhostNoteBriefly();
               }
               else
               {
@@ -5541,6 +5565,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveNotesCommand([highlightedHoldNote.noteData]));
                 clearLastTappedChartItem();
+                suppressGhostNoteBriefly();
               }
               else
               {
@@ -5668,6 +5693,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveNotesCommand([dragTargetNote.noteData]));
                 clearLastTappedChartItem();
+                suppressGhostNoteBriefly();
               }
               else
               {
@@ -5680,6 +5706,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveEventsCommand([dragTargetEvent.eventData]));
                 clearLastTappedChartItem();
+                suppressGhostNoteBriefly();
               }
               else
               {
@@ -6143,7 +6170,11 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
         || overlapsRenderedHoldNotes
         || overlapsRenderedEvents;
       // Handle grid cursor.
-      if (!isCursorOverHaxeUI && overlapsGrid && !isOrWillSelect && !overlapsSelectionBorder && !gridPlayheadScrollAreaPressed)
+      if (!isCursorOverHaxeUI && overlapsGrid && !isOrWillSelect && !overlapsSelectionBorder && !gridPlayheadScrollAreaPressed
+        #if mobile
+        && Lib.getTimer() >= ghostNoteSuppressedUntil
+        #end
+        )
       {
         // Indicate that we can place a note here.
 
