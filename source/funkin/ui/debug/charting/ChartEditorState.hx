@@ -6296,7 +6296,22 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
     }
 
     // Actually set the cursor mode to the one we specified earlier.
+    #if mobile
+    // On mobile there's no reason to ever show the "normal PC mouse" pointer graphic — there's no
+    // mouse. Only apply a cursor graphic for the specific interactive states (Grabbing, Crosshair,
+    // etc.) that were actually set above; otherwise just hide it entirely.
+    if (targetCursorMode != null)
+    {
+      FlxG.mouse.visible = true;
+      Cursor.cursorMode = targetCursorMode;
+    }
+    else
+    {
+      FlxG.mouse.visible = false;
+    }
+    #else
     Cursor.cursorMode = targetCursorMode ?? Default;
+    #end
   }
 
   function handleToolboxes():Void
