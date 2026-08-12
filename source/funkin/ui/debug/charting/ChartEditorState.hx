@@ -1054,22 +1054,14 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
   static final DOUBLE_TAP_MS:Float = 400;
 
   /**
-   * Timestamp (in milliseconds) until which the note/event/hold-note placement "ghost" preview
-   * should stay hidden. Used right after a double-tap delete so the just-deleted note doesn't
-   * appear to instantly turn translucent (which is actually the ghost preview showing through,
-   * since your finger is still resting on the now-empty cell) - it stays hidden briefly instead,
-   * so the note just cleanly disappears.
+   * Immediately hides the note/event/hold-note placement "ghost" preview sprites for the current
+   * frame. Call this right after a double-tap delete on mobile, so the just-deleted note doesn't
+   * have even a single frame where the ghost preview (which was already there, since your finger
+   * is resting on that exact now-empty cell) is visible before `handleCursor()`'s own
+   * `FlxG.mouse.pressed` check takes over and keeps it hidden until the next real touch.
    */
-  var ghostNoteSuppressedUntil:Float = 0;
-
-  /**
-   * Briefly hides the note/event/hold-note placement ghost preview. Call this right after a
-   * double-tap delete on mobile.
-   */
-  function suppressGhostNoteBriefly():Void
+  function hideGhostNoteSprites():Void
   {
-    ghostNoteSuppressedUntil = Lib.getTimer() + 350;
-
     if (gridGhostNote != null) gridGhostNote.visible = false;
     if (gridGhostHoldNote != null) gridGhostHoldNote.visible = false;
     if (gridGhostEvent != null) gridGhostEvent.visible = false;
@@ -5535,7 +5527,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveNotesCommand([highlightedNote.noteData]));
                 clearLastTappedChartItem();
-                suppressGhostNoteBriefly();
+                hideGhostNoteSprites();
               }
               else
               {
@@ -5550,7 +5542,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveEventsCommand([highlightedEvent.eventData]));
                 clearLastTappedChartItem();
-                suppressGhostNoteBriefly();
+                hideGhostNoteSprites();
               }
               else
               {
@@ -5565,7 +5557,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveNotesCommand([highlightedHoldNote.noteData]));
                 clearLastTappedChartItem();
-                suppressGhostNoteBriefly();
+                hideGhostNoteSprites();
               }
               else
               {
@@ -5693,7 +5685,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveNotesCommand([dragTargetNote.noteData]));
                 clearLastTappedChartItem();
-                suppressGhostNoteBriefly();
+                hideGhostNoteSprites();
               }
               else
               {
@@ -5706,7 +5698,7 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
               {
                 performCommand(new RemoveEventsCommand([dragTargetEvent.eventData]));
                 clearLastTappedChartItem();
-                suppressGhostNoteBriefly();
+                hideGhostNoteSprites();
               }
               else
               {
@@ -6172,7 +6164,12 @@ class ChartEditorState extends UIState // UIState derives from MusicBeatState
       // Handle grid cursor.
       if (!isCursorOverHaxeUI && overlapsGrid && !isOrWillSelect && !overlapsSelectionBorder && !gridPlayheadScrollAreaPressed
         #if mobile
-        && Lib.getTimer() >= ghostNoteSuppressedUntil
+        // Touchscreens have no real "hover" state - once a finger lifts, FlxG.mouse.x/y just
+        // stays frozen at the last touched spot, since nothing moves it away like a real mouse
+        // would. Without this check, the ghost preview would eventually reappear at the position
+        // of whatever was last tapped (e.g. a note that was just double-tap-deleted), since the
+        // game still thinks that stale position counts as "hovering" an empty cell.
+        && FlxG.mouse.pressed
         #end
         )
       {
