@@ -630,8 +630,8 @@ class CameraEditorState extends UIState implements ConsoleClass
     #if mobile
     // Scale the top File/Edit/View/Playback/Generate/Help bar up (~1.53x the desktop 35px) so
     // it's actually tappable on a touchscreen instead of sized for a mouse pointer.
-    menubar.height = 54;
-    menubar.customStyle.fontSize = 21;
+    menubar.height = 48;
+    menubar.customStyle.fontSize = 78;
     #else
     menubar.height = 35;
     #end
