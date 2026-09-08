@@ -342,7 +342,7 @@ class MainMenuState extends MusicBeatState
 
     if (rightWatermarkText == null) return;
 
-    rightWatermarkText.text += 'Mod Menu Playtest Build (v0.9 Feature Preview #3)';
+    rightWatermarkText.text = 'Playtest Version Ported by Aaronify';
   }
 
   function playMenuMusic():Void
